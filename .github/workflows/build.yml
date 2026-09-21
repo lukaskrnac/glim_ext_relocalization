@@ -4,6 +4,12 @@ name: Build
 # reálne beží na robote - tým je zaručené zhodné ABI (glibc, GTSAM,
 # gtsam_points) a výsledné .so sa dá priamo skopírovať do bežiaceho
 # kontajnera bez rekompilácie.
+#
+# DÔLEŽITÉ: glim v tomto image NIE JE nainštalovaný ako systémový balík do
+# /usr, ale zostavený vo vlastnom colcon workspace na /root/ros2_ws/install.
+# Preto sa modul musí vložiť priamo do /root/ros2_ws/src/ a zostaviť cez
+# colcon (presne tak, ako to robia aj oficiálne glim_ext moduly) - obyčajný
+# samostatný `cmake` mimo tohto workspace nevie glim nájsť.
 
 on:
   push:
@@ -25,27 +31,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure
+      - name: Vlož modul do existujúceho ros2_ws a zostav cez colcon
         shell: bash
         run: |
           set -e
-          source /opt/ros/jazzy/setup.bash 2>/dev/null || true
-          cmake -B build -DCMAKE_BUILD_TYPE=Release .
+          source /opt/ros/jazzy/setup.bash
+          source /root/ros2_ws/install/setup.bash
 
-      - name: Build
-        shell: bash
-        run: cmake --build build -j"$(nproc)"
+          mkdir -p /root/ros2_ws/src
+          cp -r "${GITHUB_WORKSPACE}" /root/ros2_ws/src/glim_relocalization
 
-      - name: Over výstup
+          cd /root/ros2_ws
+          colcon build --packages-select glim_relocalization \
+            --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+      - name: Nájdi zostavené .so
         shell: bash
         run: |
-          test -f build/libglim_relocalization.so
-          ls -la build/libglim_relocalization.so
+          find /root/ros2_ws/install/glim_relocalization -iname "*.so"
+
+      - name: Skopíruj .so na miesto, odkiaľ ho zoberie upload-artifact
+        shell: bash
+        run: |
+          mkdir -p out
+          find /root/ros2_ws/install/glim_relocalization -iname "libglim_relocalization.so" -exec cp {} out/ \;
+          test -f out/libglim_relocalization.so
 
       - name: Nahraj .so ako artifact
         uses: actions/upload-artifact@v4
         with:
           name: libglim_relocalization-${{ github.sha }}
-          path: build/libglim_relocalization.so
+          path: out/libglim_relocalization.so
           if-no-files-found: error
           retention-days: 90
