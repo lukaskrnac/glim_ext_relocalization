@@ -15,6 +15,10 @@
 
   <!-- Tieto sa poskytujú cez colcon workspace obsahujúci glim/gtsam_points, nie apt balíky -->
   <build_depend>glim</build_depend>
+  <!-- Tieto SÚ apt balíky (nlohmann-json3-dev, libspdlog-dev) - v CI ich inštaluje
+       workflow priamo, rosdep tu nie je nastavený -->
+  <build_depend>nlohmann-json3-dev</build_depend>
+  <build_depend>libspdlog-dev</build_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

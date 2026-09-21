@@ -31,6 +31,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Doinštaluj chýbajúce dev balíky
+        shell: bash
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends nlohmann-json3-dev libspdlog-dev
+          rm -rf /var/lib/apt/lists/*
+
       - name: Vlož modul do existujúceho ros2_ws a zostav cez colcon
         shell: bash
         run: |

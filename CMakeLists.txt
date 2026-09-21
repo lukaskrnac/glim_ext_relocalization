@@ -10,7 +10,10 @@ endif()
 
 find_package(glim REQUIRED)
 find_package(GTSAM REQUIRED)
-find_package(nlohmann_json REQUIRED)
+# nlohmann_json je header-only - nepoužívame find_package/CMake target, len
+# systémové hlavičky nainštalované cez "apt install nlohmann-json3-dev".
+# /usr/include je v predvolenej include ceste kompilátora, takže samotný
+# #include <nlohmann/json.hpp> v .cpp súbore stačí bez ďalšej CMake väzby.
 
 add_library(glim_relocalization SHARED
   src/relocalization_module.cpp
@@ -23,12 +26,11 @@ target_include_directories(glim_relocalization PUBLIC
 target_link_libraries(glim_relocalization
   glim::glim
   gtsam
-  nlohmann_json::nlohmann_json
 )
 
-# Ak build prostredie nemá nlohmann_json ako CMake target (bežné pri systémovom
-# libnlohmann-json3-dev), odkomentuj toto miesto to a zmaž find_package/target_link vyššie:
-# target_include_directories(glim_relocalization PUBLIC /usr/include/nlohmann)
+# Ak by build hlásil "nlohmann/json.hpp: No such file or directory", znamená
+# to, že v tomto prostredí nie je nainštalovaný balík nlohmann-json3-dev
+# (v CI workflow sa inštaluje pred týmto krokom cez apt-get).
 
 install(TARGETS glim_relocalization
   LIBRARY DESTINATION lib
