@@ -1,0 +1,51 @@
+name: Build
+
+# Buildne modul vnútri rovnakého Docker image (koide3/glim_ros2:jazzy), aký
+# reálne beží na robote - tým je zaručené zhodné ABI (glibc, GTSAM,
+# gtsam_points) a výsledné .so sa dá priamo skopírovať do bežiaceho
+# kontajnera bez rekompilácie.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    # Ak používaš iný tag (napr. jazzy_cuda13.1 s GPU), zmeň ho aj tu,
+    # nech CI presne zodpovedá tvojmu runtime prostrediu.
+    container:
+      image: koide3/glim_ros2:jazzy
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        shell: bash
+        run: |
+          set -e
+          source /opt/ros/jazzy/setup.bash 2>/dev/null || true
+          cmake -B build -DCMAKE_BUILD_TYPE=Release .
+
+      - name: Build
+        shell: bash
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Over výstup
+        shell: bash
+        run: |
+          test -f build/libglim_relocalization.so
+          ls -la build/libglim_relocalization.so
+
+      - name: Nahraj .so ako artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libglim_relocalization-${{ github.sha }}
+          path: build/libglim_relocalization.so
+          if-no-files-found: error
+          retention-days: 90
