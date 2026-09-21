@@ -1,0 +1,39 @@
+{
+  "relocalization": {
+    "// map_path": "Priečinok s uloženou GLIM mapou (výstup z GlobalMapping::save / GUI 'Save map')",
+    "map_path": "/glim/maps/garden_map",
+
+    "// enable": "Ak false, modul sa načíta ale nič nerobí (bezpečný no-op na test loadovania)",
+    "enable": true,
+
+    "// initial_pose_xyz_yaw_deg": "Počiatočný odhad pozície [x, y, z, yaw_deg] v súradniciach uloženej mapy. Nastav podľa toho, kde robot reálne štartuje (napr. dokovacia stanica).",
+    "initial_pose_xyz_yaw_deg": [0.0, 0.0, 0.0, 0.0],
+
+    "// linear_search_window_m": "Šírka hrubého grid-search okna v X/Y okolo initial_pose (metre). Väčšie okno = pomalšie, ale odpúšťa nepresný initial guess.",
+    "linear_search_window_m": 6.0,
+
+    "// linear_search_step_m": "Krok grid-search mriežky v X/Y (metre).",
+    "linear_search_step_m": 0.5,
+
+    "// angular_search_window_deg": "Šírka hrubého grid-search okna v yaw (stupne), vycentrovaná na initial guess.",
+    "angular_search_window_deg": 30.0,
+
+    "// angular_search_step_deg": "Krok grid-search mriežky v yaw (stupne).",
+    "angular_search_step_deg": 10.0,
+
+    "// min_overlap_score": "Minimálne prekrytie (0-1) grid-search kandidáta, aby sa vôbec skúsil VGICP refine. Príliš nízko = pomalé/nepresné, príliš vysoko = nikdy sa nespustí.",
+    "min_overlap_score": 0.3,
+
+    "// min_final_overlap_score": "Minimálne prekrytie PO VGICP doladení, aby sa výsledok akceptoval a vložil do grafu.",
+    "min_final_overlap_score": 0.5,
+
+    "// voxel_resolution_m": "Rozlíšenie voxel mriežky pre overlap scoring a VGICP zarovnanie referenčnej mapy.",
+    "voxel_resolution_m": 0.5,
+
+    "// relocalization_factor_precision": "Presnosť (inverzná kovariancia) BetweenFactor-u, ktorý viaže bežiaci graf na referenčnú mapu. Vyššie = GLIM viac 'verí' relokalizácii.",
+    "relocalization_factor_precision": 1.0e6,
+
+    "// lock_reference_map": "Ak true, pridá NonlinearEquality1 na pózy referenčnej mapy, aby sa nikdy neoptimalizovali (mapa ostáva fixná).",
+    "lock_reference_map": true
+  }
+}

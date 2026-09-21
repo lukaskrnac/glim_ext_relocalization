@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>glim_relocalization</name>
+  <version>0.1.0</version>
+  <description>
+    Simplified relocalization extension module for GLIM. Loads a prebuilt map,
+    performs a one-time coarse-to-fine relocalization against it at startup,
+    and ties the running global mapping graph to the fixed reference map via
+    the official on_smoother_update / on_insert_submap callback hooks.
+  </description>
+  <maintainer email="you@example.com">mowgli</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- Tieto sa poskytujú cez colcon workspace obsahujúci glim/gtsam_points, nie apt balíky -->
+  <build_depend>glim</build_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
