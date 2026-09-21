@@ -64,10 +64,10 @@ private:
   bool load_reference_map(const std::string& path);
 
   // Hrubý grid-search (X/Y/yaw) okolo initial_pose_, vráti najlepšieho kandidáta a jeho skóre
-  Eigen::Isometry3d coarse_search(const gtsam_points::GaussianVoxelMap& reference_voxelmap, const SubMap::ConstPtr& query_submap, double& best_score) const;
+  Eigen::Isometry3d coarse_search(const std::shared_ptr<const gtsam_points::GaussianVoxelMap>& reference_voxelmap, const SubMap::ConstPtr& query_submap, double& best_score) const;
 
   // VGICP doladenie okolo coarse_search výsledku
-  Eigen::Isometry3d refine_vgicp(const gtsam_points::GaussianVoxelMap& reference_voxelmap, const SubMap::ConstPtr& query_submap, const Eigen::Isometry3d& initial_guess, double& final_score) const;
+  Eigen::Isometry3d refine_vgicp(const std::shared_ptr<const gtsam_points::GaussianVoxelMap>& reference_voxelmap, const SubMap::ConstPtr& query_submap, const Eigen::Isometry3d& initial_guess, double& final_score) const;
 
 private:
   mutable std::mutex mutex_;

@@ -14,6 +14,7 @@
 #include <gtsam/slam/BetweenFactor.h>
 
 #include <gtsam_points/types/point_cloud_cpu.hpp>
+#include <gtsam_points/types/gaussian_voxelmap.hpp>
 #include <gtsam_points/types/gaussian_voxelmap_cpu.hpp>
 #include <gtsam_points/factors/integrated_vgicp_factor.hpp>
 
@@ -192,7 +193,7 @@ void RelocalizationModule::on_smoother_update(gtsam_points::ISAM2Ext& isam2, gts
   // 2) Hrubý grid-search + VGICP doladenie voči prvej (najbližšej) referenčnej submape.
   //    Zjednodušenie oproti forku: neprehľadávame všetky referenčné submapy podľa
   //    vzdialenosti, len prvú - uprav podľa reálnej veľkosti tvojej mapy.
-  const auto& reference_voxelmap = *reference_voxelmaps_.front();
+  const auto& reference_voxelmap = reference_voxelmaps_.front();
   const auto& reference_submap = reference_submaps_.front();
 
   double coarse_score = 0.0;
@@ -222,7 +223,10 @@ void RelocalizationModule::on_smoother_update(gtsam_points::ISAM2Ext& isam2, gts
   spdlog::info("[glim_relocalization] relocalized successfully against reference map (overlap score {:.3f})", final_score);
 }
 
-Eigen::Isometry3d RelocalizationModule::coarse_search(const gtsam_points::GaussianVoxelMap& reference_voxelmap, const SubMap::ConstPtr& query_submap, double& best_score) const {
+Eigen::Isometry3d RelocalizationModule::coarse_search(
+  const std::shared_ptr<const gtsam_points::GaussianVoxelMap>& reference_voxelmap,
+  const SubMap::ConstPtr& query_submap,
+  double& best_score) const {
   best_score = 0.0;
   Eigen::Isometry3d best_pose = initial_pose_;
 
@@ -230,6 +234,9 @@ Eigen::Isometry3d RelocalizationModule::coarse_search(const gtsam_points::Gaussi
   // veľkom search window a malom kroku môže byť pomalé. Na CPU-only stroji
   // (bez GPU) drž linear_search_window_ a angular_search_window_ radšej menšie
   // a spoľahni sa na dobrý initial_pose_ odhad (napr. GPS/dokovacia poloha).
+  //
+  // overlap_auto sama zvolí CPU/GPU cestu podľa toho, čo je k dispozícii -
+  // netreba to riešiť zvlášť.
   for (double dx = -linear_search_window_ / 2.0; dx <= linear_search_window_ / 2.0; dx += linear_search_step_) {
     for (double dy = -linear_search_window_ / 2.0; dy <= linear_search_window_ / 2.0; dy += linear_search_step_) {
       for (double dyaw = -angular_search_window_ / 2.0; dyaw <= angular_search_window_ / 2.0; dyaw += angular_search_step_) {
@@ -238,27 +245,8 @@ Eigen::Isometry3d RelocalizationModule::coarse_search(const gtsam_points::Gaussi
         candidate.translation().y() += dy;
         candidate.linear() = (Eigen::AngleAxisd(dyaw, Eigen::Vector3d::UnitZ()) * candidate.linear()).eval();
 
-        // Skóre prekrytia: jednoduchý pomer bodov aktuálneho skenu, ktoré padnú
-        // do obsadenej voxel bunky referenčnej mapy, ku celkovému počtu bodov.
-        // TODO: nahraď/over podľa presnej verzie gtsam_points - ak je k dispozícii
-        // gtsam_points::overlap_auto(...), použi radšej tú (je optimalizovanejšia).
-        int hits = 0;
-        const auto& pts = query_submap->frame->points;
-        const int num_points = query_submap->frame->size();
-        const int stride = std::max(1, num_points / 500);  // subsample pre rýchlosť
-        int checked = 0;
-        for (int i = 0; i < num_points; i += stride) {
-          const Eigen::Vector4d p_local = pts[i];
-          const Eigen::Vector3d p_world = candidate * p_local.head<3>();
-          if (reference_voxelmap.insert /* placeholder */) {
-            // gtsam_points::GaussianVoxelMap nemá priamu "contains" metódu vo
-            // verejnom API - over si najvhodnejšiu (napr. cez KdTree nearest-neighbor
-            // dotaz na referenčný point cloud, alebo FastOccupancyGrid::calc_overlap_rate,
-            // ktorá je na presne toto navrhnutá). Toto miesto si nutne uprav pred buildom.
-          }
-          checked++;
-        }
-        const double score = checked > 0 ? static_cast<double>(hits) / checked : 0.0;
+        // T_target_source: reference mapa je "target", náš live sken je "source"
+        const double score = gtsam_points::overlap_auto(reference_voxelmap, query_submap->frame, candidate);
 
         if (score > best_score) {
           best_score = score;
@@ -271,41 +259,40 @@ Eigen::Isometry3d RelocalizationModule::coarse_search(const gtsam_points::Gaussi
   return best_pose;
 }
 
-Eigen::Isometry3d RelocalizationModule::refine_vgicp(const gtsam_points::GaussianVoxelMap& reference_voxelmap, const SubMap::ConstPtr& query_submap, const Eigen::Isometry3d& initial_guess, double& final_score) const {
+Eigen::Isometry3d RelocalizationModule::refine_vgicp(
+  const std::shared_ptr<const gtsam_points::GaussianVoxelMap>& reference_voxelmap,
+  const SubMap::ConstPtr& query_submap,
+  const Eigen::Isometry3d& initial_guess,
+  double& final_score) const {
   // Malý lokálny faktor graf s jednou premennou (pose kandidáta), VGICP faktorom
   // voči referenčnej voxel mape, optimalizovaný cez Levenberg-Marquardt.
+  //
+  // Používame unárny konštruktor IntegratedVGICPFactor s fixnou target pózou
+  // (Pose3::Identity(), keďže referenčná mapa je vo svojich vlastných
+  // súradniciach) - žiadna extra premenná/NonlinearEquality na zamknutie
+  // referencie nie je potrebná, faktor to rieši priamo.
   gtsam::NonlinearFactorGraph graph;
   gtsam::Values initial;
 
   const gtsam::Key key = X(0);
   initial.insert(key, gtsam::Pose3(initial_guess.matrix()));
 
-  // POZOR: IntegratedVGICPFactor očakáva dve premenné (target, source) - tu
-  // referenčnú mapu držíme fixnú cez PriorFactor s vysokou presnosťou na key M(0),
-  // namiesto skutočného "fixed frame" konštruktora, ktorý sa medzi verziami líši.
-  // Over si presnú signatúru IntegratedVGICPFactor vo svojej verzii gtsam_points.
-  const gtsam::Key ref_key = M(0);
-  initial.insert(ref_key, gtsam::Pose3::Identity());
-  graph.emplace_shared<gtsam::NonlinearEquality1<gtsam::Pose3>>(gtsam::Pose3::Identity(), ref_key);
-
-  // graph.emplace_shared<gtsam_points::IntegratedVGICPFactor>(
-  //     ref_key, key,
-  //     /* target voxelmap */ std::shared_ptr<const gtsam_points::GaussianVoxelMap>(&reference_voxelmap, [](auto*){}),
-  //     /* source cloud   */ query_submap->frame);
-  //
-  // ^ Zámerne zakomentované: presná signatúra konštruktora IntegratedVGICPFactor
-  //   (poradie argumentov, shared_ptr typy) sa medzi verziami gtsam_points líšila.
-  //   Toto je jediné miesto, kde treba pozrieť aktuálnu hlavičku
-  //   <gtsam_points/factors/integrated_vgicp_factor.hpp> vo svojom builde a doplniť
-  //   správne volanie - zvyšok modulu (callbacky, grid-search, vkladanie do
-  //   on_smoother_update) je hotový a nezávislý od tejto jednej signatúry.
+  graph.emplace_shared<gtsam_points::IntegratedVGICPFactor>(
+    gtsam::Pose3::Identity(),  // fixed_target_pose - referenčná mapa je vo vlastných súradniciach
+    key,                       // source_key - toto sa optimalizuje
+    reference_voxelmap,        // target_voxels
+    query_submap->frame);      // source
 
   gtsam::LevenbergMarquardtParams params;
   gtsam::LevenbergMarquardtOptimizer optimizer(graph, initial, params);
   const gtsam::Values result = optimizer.optimize();
 
-  final_score = 0.0;  // TODO: po doplnení VGICP faktora vyššie, získaj overlap/error z result
-  return Eigen::Isometry3d(result.at<gtsam::Pose3>(key).matrix());
+  const Eigen::Isometry3d refined(result.at<gtsam::Pose3>(key).matrix());
+
+  // Skóre po doladení - znova cez overlap_auto, teraz s presnou pózou
+  final_score = gtsam_points::overlap_auto(reference_voxelmap, query_submap->frame, refined);
+
+  return refined;
 }
 
 extern "C" ExtensionModule* create_extension_module() {
